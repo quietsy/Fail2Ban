@@ -1,0 +1,100 @@
+## Version 2020/05/10 - Changelog: https://github.com/linuxserver/docker-swag/commits/master/root/defaults/jail.local
+# This is the custom version of the jail.conf for fail2ban
+# Feel free to modify this and add additional filters
+# Then you can drop the new filter conf files into the fail2ban-filters
+# folder and restart the container
+
+[DEFAULT]
+
+ignoreip = 10.1.1.0/24
+		   10.2.2.0/24
+
+# Changes the default ban action from "iptables-multiport", which causes issues on some platforms, to "iptables-allports".
+banaction = iptables-allports
+
+# "bantime" is the number of seconds that a host is banned.
+bantime  = 8640000
+
+# A host is banned if it has generated "maxretry" during the last "findtime"
+# seconds.
+findtime  = 600
+
+# "maxretry" is the number of failures before a host get banned.
+maxretry = 5
+
+
+[ssh]
+
+enabled = false
+
+
+[nginx-http-auth]
+
+enabled  = true
+filter   = nginx-http-auth
+port     = http,https
+logpath  = /config/log/nginx/error.log
+action  = discordEmbed[bantime=24]
+          iptables-allports[name=nginx-http-auth]
+
+
+[nginx-badbots]
+
+enabled  = true
+port     = http,https
+filter   = nginx-badbots
+logpath  = /config/log/nginx/access.log
+maxretry = 2
+action  = discordEmbed[bantime=24]
+          iptables-allports[name=nginx-badbots]
+
+
+[nginx-botsearch]
+
+enabled  = true
+port     = http,https
+filter   = nginx-botsearch
+logpath  = /config/log/nginx/access.log
+action  = discordEmbed[bantime=24]
+          iptables-allports[name=nginx-botsearch]
+
+[nginx-deny]
+
+enabled  = true
+port     = http,https
+filter   = nginx-deny
+logpath  = /config/log/nginx/error.log
+action  = discordEmbed[bantime=24]
+          iptables-allports[name=nginx-deny]
+
+[nextcloud]
+enabled = true
+port     = http,https
+filter = nextcloud
+logpath = /nextcloud/nextcloud.log
+action  = discordEmbed[bantime=24]
+          iptables-allports[name=nextcloud]
+
+[jellyfin]
+enabled  = true
+filter   = jellyfin
+port     = http,https
+logpath  = /jellyfin/log*.log
+action  = discordEmbed[bantime=24]
+          iptables-allports[name=jellyfin]
+
+[bitwardenrs]
+enabled = true
+port     = http,https
+filter = bitwardenrs
+logpath = /bitwarden/bitwarden.log
+action  = discordEmbed[bantime=24]
+          iptables-allports[name=bitwardenrs]
+
+[calibreweb]
+enabled  = true
+filter   = calibreweb
+port     = http,https
+logpath  = /calibreweb/calibre-web.log
+action  = discordEmbed[bantime=24]
+          iptables-allports[name=calibreweb]
