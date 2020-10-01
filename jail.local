@@ -98,3 +98,11 @@ port     = http,https
 logpath  = /calibreweb/calibre-web.log
 action  = discordEmbed[bantime=24]
           iptables-allports[name=calibreweb]
+
+[xbackbone]
+enabled  = true
+filter   = xbackbone
+port     = http,https
+logpath  = /config/www/share/logs/log*.txt
+action  = discordEmbed[bantime=24]
+          iptables-allports[name=xbackbone]
