@@ -147,6 +147,7 @@ Add the line to every external application based on your needs.
 
 ### NGINX Configuration
 
+##### HSTS
 HTTP Strict Transport Security (HSTS) is a web security policy mechanism that helps to protect websites against man-in-the-middle attacks such as protocol downgrade attacks and cookie hijacking. It allows web servers to declare that web browsers (or other complying user agents) should automatically interact with it using only HTTPS connections, which provide Transport Layer Security (TLS/SSL), unlike the insecure HTTP used alone.
 
 To enable, uncomment the HSTS config line in ssl.conf:
@@ -154,6 +155,7 @@ To enable, uncomment the HSTS config line in ssl.conf:
 add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
 ```
 
+##### X-Robots-Tag
 You can prevent applications from appearing in results of search engines and web crawlers, regardless of whether other sites link to it. It doesn't work on all search engines and web crawlers, but it significantly reduces the chance.
 
 To enable, uncomment the X-Robots-Tag config line in ssl.conf:
