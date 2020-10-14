@@ -39,6 +39,7 @@ services:
 ### Fail2Ban
 
 Fail2Ban is an intrusion prevention software that protects external applications from brute-force attacks. Attackers who fail to login to your applications a certain number of times will get blocked from accessing all of your applications.
+
 For example, in order to protect Nextcloud create a file called nextcloud.conf under fail2ban/filter.d:
 
 ```
@@ -65,6 +66,7 @@ Finally add the following volume to the compose yaml:
 ```
 
 Repeat the process for every external application, you can find Fail2Ban configurations for most applications on the internet.
+
 This great mod sends a discord notification when Fail2Ban blocked an attack: [f2bdiscord](https://github.com/linuxserver/docker-mods/tree/swag-f2bdiscord)
 
 ### Geoblock
