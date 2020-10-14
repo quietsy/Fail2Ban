@@ -81,7 +81,11 @@ include /config/nginx/geoip2.conf;
 
 Acquire a Maxmind license key [here](https://www.maxmind.com/en/geolite2/signup)
 
-Add the -e MAXMINDDB_LICENSE_KEY=<licensekey> to the compose yaml to automatically download the Geolite2 database.
+Add the following environment variable to the compose yaml to automatically download the Geolite2 database:
+
+```
+      - MAXMINDDB_LICENSE_KEY=<license key>
+```
 
 Below are 2 examples:
 - Allowing a single country and your LAN.
