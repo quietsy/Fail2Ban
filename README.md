@@ -88,8 +88,8 @@ Add the following environment variable to the compose yaml to automatically down
 ```
 
 Below are 2 examples:
-- Allowing a single country and your LAN.
-- Allowing everything except high risk countries. (GilbN's list based on the Spamhaus statistics and Aakamai’s state of the internet report)
+- Allow a single country and your LAN.
+- Allow everything except high risk countries. (GilbN's list based on the Spamhaus statistics and Aakamai’s state of the internet report)
 
 ```Nginx
 map $geoip2_data_country_iso_code $allowed_mycountry {
