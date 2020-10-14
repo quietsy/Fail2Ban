@@ -1,6 +1,7 @@
 # Securing SWAG
 
 SWAG - Secure Web Application Gateway (formerly known as letsencrypt) is a full fledged web server and reverse proxy with Nginx, Php7, Certbot (Let's Encrypt™ client) and Fail2ban built in.
+
 SWAG allows you to expose applications to the internet, doing so comes with a risk and there are security measures that help reduce that risk. This article details how to configure SWAG and enhance it's security.
 
 This article assumes that you already have a functional SWAG setup. Following is the compose yaml used to create the SWAG container referenced in this article. Keep in mind your local mount paths will be different so adjust accordingly.
@@ -72,12 +73,14 @@ This great mod sends a discord notification when Fail2Ban blocked an attack: [f2
 ### Geoblock
 
 Geoblock is a great way to reduce the attack surface of SWAG by restricting access based on countries.
+
 To enable geoblock, uncomment the Geoip2 config line in nginx.conf:
 ```
 include /config/nginx/geoip2.conf;
 ```
 
 Acquire a Maxmind license key [here](https://www.maxmind.com/en/geolite2/signup)
+
 Add the -e MAXMINDDB_LICENSE_KEY=<licensekey> to the compose yaml to automatically download the Geolite2 database.
 
 Below are 2 examples:
