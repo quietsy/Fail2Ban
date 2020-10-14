@@ -171,12 +171,14 @@ add_header X-Robots-Tag "";
 ### Internal Applications
 
 Some applications are only used internally in your network and don't have to be exposed to the internet, but you can still route them through SWAG and reach them with a local domain. This requires a local DNS, such as dnsmasq, unbound, pihole, adguardhome, etc.
+
 Configure your local DNS to redirect *.local to SWAG, for example add the following line to dnsmasq.conf:
 ```
 address=/local/192.168.1.5
 ```
 
 Replace local with your desired domain (to avoid problems don't use existing domains like .com, .net, etc.), replace 192.168.1.5 with the IP of SWAG's host.
+
 Make the following changes to the application's configuration:
 
 ```Nginx
@@ -198,8 +200,11 @@ server {
 ```
 
 Repeat the process for all internal applications.
+
 The recommended way to access internal applications from the internet is through a VPN, for example WireGuard:
+
 [WireGuard Container](https://hub.docker.com/r/linuxserver/wireguard)
+
 [WireGuard on OPNSense](https://blog.linuxserver.io/2019/11/16/setting-up-wireguard-on-opnsense-android/)
 
 ### Authelia
