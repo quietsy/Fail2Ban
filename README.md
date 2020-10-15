@@ -1,6 +1,6 @@
 # Securing SWAG
 
-SWAG - Secure Web Application Gateway (formerly known as letsencrypt) is a full fledged web server and reverse proxy with Nginx, Php7, Certbot (Let's Encrypt™ client) and Fail2ban built in.
+SWAG - Secure Web Application Gateway (formerly known as linuxserver/letsencrypt) is a full fledged web server and reverse proxy with Nginx, PHP7, Certbot (Let's Encrypt™ client) and Fail2Ban built in.
 
 SWAG allows you to expose applications to the internet, doing so comes with a risk and there are security measures that help reduce that risk. This article details how to configure SWAG and enhance it's security.
 
@@ -37,11 +37,73 @@ services:
     restart: unless-stopped
 ```
 
-### Fail2Ban
+## Internal Applications
+
+Internal applications can be proxied through SWAG in order to use app.mydomain.com instead of ip:port, but it is recommended to block them externally so only your local network could access them.
+
+Edit nginx.conf and add the following configuration inside the http tag:
+
+```Nginx
+    geo $lan-ip {
+	    default no;
+	    192.168.1.0/24 yes; #Replace with your LAN subnet
+	    127.0.0.1 yes;
+    }
+```
+
+To utilize the lan filter in your configuration, add the following line above your location section in every application you want to protect.
+```
+    if ($lan-ip = no) { return 404; }
+```
+
+Example:
+
+```Nginx
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+
+    server_name collabora.*;
+    include /config/nginx/ssl.conf;
+    client_max_body_size 0;
+
+    if ($lan-ip = no) { return 404; }
+
+    location / {
+        include /config/nginx/proxy.conf;
+        resolver 127.0.0.11 valid=30s;
+        set $upstream_app collabora;
+        set $upstream_port 9980;
+        set $upstream_proto https;
+        proxy_pass $upstream_proto://$upstream_app:$upstream_port;
+    }
+}
+```
+
+Repeat the process for all internal applications.
+
+The recommended way to access internal applications from the internet is through a VPN, for example WireGuard:
+
+[WireGuard Container](https://hub.docker.com/r/linuxserver/wireguard)
+
+[WireGuard on OPNSense](https://blog.linuxserver.io/2019/11/16/setting-up-wireguard-on-opnsense-android/)
+
+## Fail2Ban
 
 Fail2Ban is an intrusion prevention software that protects external applications from brute-force attacks. Attackers who fail to login to your applications a certain number of times will get blocked from accessing all of your applications.
 
-For example, in order to protect Nextcloud create a file called nextcloud.conf under fail2ban/filter.d:
+Fail2Ban does this by looking for failed login attempts in log files, counts the failed attempts in a short period, and bans the IP address of the attacker.
+
+First, we need to mount the logs to SWAG's container, add a volume for the log to the compose yaml:
+```
+      - /path/to/nextcloud/nextcloud.log:/nextcloud/nextcloud.log:ro
+```
+In case the application has multiple log files with dates, mount the entire folder:
+```
+      - /path/to/jellyfin/log:/jellyfin:ro
+```
+
+Recreate the container with the log mount, then create a file called nextcloud.conf under fail2ban/filter.d:
 
 ```
 [Definition]
@@ -50,7 +112,24 @@ failregex=^.*Login failed: '?.*'? \(Remote IP: '?<ADDR>'?\).*$
 ignoreregex =
 ```
 
-Add the following configuration to fail2ban/jail.local:
+The configuration file containes a pattern by which failed login attempts are matched. In order to test the pattern, fail to login to nextcloud and look for the entry corresponding to your failed attempt.
+```
+{"reqId":"k5j5H7K3eskXt3hCLSc4i","level":2,"time":"2020-10-14T22:56:14+00:00","remoteAddr":"1.2.3.4","user":"--",
+"app":"no app in context","method":"POST","url":"/login","message":"Login failed: username (Remote IP: 5.5.5.5)",
+"userAgent":"Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/5.6.7.8 Mobile 
+Safari/537.36","version":"19.0.4.2"}
+```
+In order to test the pattern in nextcloud.conf, run the following command on the docker host:
+```
+docker exec swag fail2ban-regex /nextcloud/nextcloud.log /config/fail2ban/filter.d/nextcloud.conf
+```
+If the pattern works, you will see matches corresponding to the amount of failed login attempts:
+```
+Lines: 92377 lines, 0 ignored, 2 matched, 92375 missed
+[processed in 7.51 sec]
+```
+
+The final step is to activate the jail, add the following to fail2ban/jail.local:
 
 ```
 [nextcloud]
@@ -60,17 +139,26 @@ filter = nextcloud
 logpath = /nextcloud/nextcloud.log
 action  = iptables-allports[name=nextcloud]
 ```
-
-Finally add the following volume to the compose yaml:
+If the application has multiple log files with dates:
 ```
-      - /path/to/nextcloud/nextcloud.log:/nextcloud/nextcloud.log:ro
+[jellyfin]
+enabled  = true
+filter   = jellyfin
+port     = http,https
+logpath  = /jellyfin/log*.log
+action  =  iptables-allports[name=jellyfin]
 ```
 
 Repeat the process for every external application, you can find Fail2Ban configurations for most applications on the internet.
 
-This great mod sends a discord notification when Fail2Ban blocked an attack: [f2bdiscord](https://github.com/linuxserver/docker-mods/tree/swag-f2bdiscord)
+If you need to unban an IP address that was blocked, run the following command on the docker host:
+```
+docker exec swag fail2ban-client unban <ip address>
+```
 
-### Geoblock
+This great mod sends a discord notification when Fail2Ban blocks an attack: [f2bdiscord](https://github.com/linuxserver/docker-mods/tree/swag-f2bdiscord)
+
+## Geoblock
 
 Geoblock is a great way to reduce the attack surface of SWAG by restricting access based on countries.
 
@@ -87,7 +175,7 @@ Add the following environment variable to the compose yaml to automatically down
       - MAXMINDDB_LICENSE_KEY=<license key>
 ```
 
-Below are 2 examples:
+Edit geoip2.conf, below are 2 examples:
 - Allow a single country and your LAN.
 - Allow everything except high risk countries. (GilbN's list based on the Spamhaus statistics and Aakamai’s state of the internet report)
 
@@ -96,6 +184,7 @@ map $geoip2_data_country_iso_code $allowed_mycountry {
     default no;
     US yes; #Replace with your country code list https://dev.maxmind.com/geoip/legacy/codes/iso3166/
     192.168.1.0/24 yes; #Replace with your LAN subnet
+	  127.0.0.1 yes;
 }
 
 map $geoip2_data_country_iso_code $denied_highrisk {
@@ -152,70 +241,47 @@ server {
 
 Add the line to every external application based on your needs.
 
-### NGINX Configuration
+## NGINX Configuration
 
-##### HSTS
+### X-Robots-Tag
+You can prevent applications from appearing in results of search engines and web crawlers, regardless of whether other sites link to it. It doesn't work on all search engines and web crawlers, but it significantly reduces the chance.
+
+Uncomment the X-Robots-Tag config line in ssl.conf to enable on all of your applications:
+```
+add_header X-Robots-Tag "noindex, nofollow, nosnippet, noarchive";
+```
+
+Disable on a specific application and allow search engines to display it by add the following line to the application config inside the server tag:
+```
+add_header X-Robots-Tag "";
+```
+
+### HSTS
 HTTP Strict Transport Security (HSTS) is a web security policy mechanism that helps to protect websites against man-in-the-middle attacks such as protocol downgrade attacks and cookie hijacking. It allows web servers to declare that web browsers (or other complying user agents) should automatically interact with it using only HTTPS connections, which provide Transport Layer Security (TLS/SSL), unlike the insecure HTTP used alone.
+
+**HSTS requires a working SSL certificate on your domains before enabling it.**
 
 To enable, uncomment the HSTS config line in ssl.conf:
 ```
 add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
 ```
 
-##### X-Robots-Tag
-You can prevent applications from appearing in results of search engines and web crawlers, regardless of whether other sites link to it. It doesn't work on all search engines and web crawlers, but it significantly reduces the chance.
+#### Optional - Strengthening HSTS
+After enabling the HSTS header, users are still vulnerable to attack if they access an HSTS‑protected website over HTTP when they have:
+- Never before visited the site
+- Recently reinstalled their operating system
+- Recently reinstalled their browser
+- Switched to a new browser
+- Switched to a new device (for example, mobile phone)
+- Deleted their browser’s cache
+- Not visited the site recently and the max-age time has passed
 
-To enable, uncomment the X-Robots-Tag config line in ssl.conf:
-```
-add_header X-Robots-Tag "noindex, nofollow, nosnippet, noarchive";
-```
+To address this, Google maintains a “HSTS preload list” of web domains and subdomains that use HSTS and have submitted their names to [HSTS Preload](https://hstspreload.org/). This domain list is distributed and hardcoded into major web browsers. Clients that access web domains in this list automatically use HTTPS and refuse to access the site using HTTP.
 
-To disable on a specific application and allow search engines to display it, add the following line to the application config inside the server tag:
-```
-add_header X-Robots-Tag "";
-```
+Be aware that once you set the STS header or submit your domains to the HSTS preload list, it is impossible to remove it. It’s a one‑way decision to make your domains available over HTTPS.
 
-### Internal Applications
+## Authelia
 
-Some applications are only used internally in your network and don't have to be exposed to the internet, but you can still route them through SWAG and reach them with a local domain. This requires a local DNS, such as dnsmasq, unbound, pihole, adguardhome, etc.
-
-Configure your local DNS to redirect *.local to SWAG, for example add the following line to dnsmasq.conf:
-```
-address=/local/192.168.1.5
-```
-
-Replace local with your desired domain (to avoid problems don't use existing domains like .com, .net, etc.), replace 192.168.1.5 with the IP of SWAG's host.
-
-Make the following changes to the application's configuration:
-
-```Nginx
-server {
-    listen 80; #local applications can listen on port 80
-    server_name calibre.local; #explicitely state application.local
-    client_max_body_size 0;
-
-    location / {
-        include /config/nginx/proxy.conf;
-        resolver 127.0.0.11 valid=30s;
-        set $upstream_app calibre;
-        set $upstream_port 8080;
-        set $upstream_proto http;
-        proxy_pass $upstream_proto://$upstream_app:$upstream_port;
-        proxy_buffering off;
-    }
-}
-```
-
-Repeat the process for all internal applications.
-
-The recommended way to access internal applications from the internet is through a VPN, for example WireGuard:
-
-[WireGuard Container](https://hub.docker.com/r/linuxserver/wireguard)
-
-[WireGuard on OPNSense](https://blog.linuxserver.io/2019/11/16/setting-up-wireguard-on-opnsense-android/)
-
-### Authelia
-
-Authelia is an open-source authentication and authorization server providing 2-factor authentication and single sign-on (SSO) for your applications via a web portal. Refer to this  [blog post to configure Authelia](https://blog.linuxserver.io/2020/08/26/setting-up-authelia/).
+Authelia is an open-source authentication and authorization server providing 2-factor authentication and single sign-on (SSO) for your applications via a web portal. Refer to this [blog post to configure Authelia](https://blog.linuxserver.io/2020/08/26/setting-up-authelia/).
 
 
