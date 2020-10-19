@@ -1,10 +1,7 @@
 # Securing SWAG
+SWAG - Secure Web Application Gateway (formerly known as linuxserver/letsencrypt) is a full fledged web server and reverse proxy with Nginx, PHP7, Certbot (Let's Encrypt™ client) and Fail2Ban built in. SWAG allows you to expose applications to the internet, doing so comes with a risk and there are security measures that help reduce that risk. This article details how to configure SWAG and enhance it's security.
 
-SWAG - Secure Web Application Gateway (formerly known as linuxserver/letsencrypt) is a full fledged web server and reverse proxy with Nginx, PHP7, Certbot (Let's Encrypt™ client) and Fail2Ban built in.
-
-SWAG allows you to expose applications to the internet, doing so comes with a risk and there are security measures that help reduce that risk. This article details how to configure SWAG and enhance it's security.
-
-This article assumes that you already have a functional SWAG setup. Following is the compose yaml used to create the SWAG container referenced in this article. Keep in mind your local mount paths will be different so adjust accordingly.
+*This article assumes that you already have a functional SWAG setup. Following is the compose yaml used to create the SWAG container referenced in this article. Keep in mind your local mount paths will be different so adjust accordingly.*
 
 ```YAML
 ---
@@ -37,23 +34,20 @@ services:
     restart: unless-stopped
 ```
 
+
 ## Internal Applications
+Internal applications can be proxied through SWAG in order to use app.mydomain.com instead of ip:port, and block them externally so only your local network could access them.
 
-Internal applications can be proxied through SWAG in order to use app.mydomain.com instead of ip:port, but it is recommended to block them externally so only your local network could access them.
-
-Edit nginx.conf and add the following configuration inside the http tag:
+Create a file called nginx/internal.conf with the following configuration:
 
 ```Nginx
-    geo $lan-ip {
-	    default no;
-	    192.168.1.0/24 yes; #Replace with your LAN subnet
-	    127.0.0.1 yes;
-    }
+allow 192.168.1.0/24; #Replace with your LAN subnet
+deny all;
 ```
 
-To utilize the lan filter in your configuration, add the following line above your location section in every application you want to protect.
+Utilize the lan filter in your configuration by adding the following line inside every location block for every application you want to protect.
 ```
-    if ($lan-ip = no) { return 404; }
+    include /config/nginx/internal.conf;
 ```
 
 Example:
@@ -67,9 +61,8 @@ server {
     include /config/nginx/ssl.conf;
     client_max_body_size 0;
 
-    if ($lan-ip = no) { return 404; }
-
     location / {
+        include /config/nginx/internal.conf;
         include /config/nginx/proxy.conf;
         resolver 127.0.0.11 valid=30s;
         set $upstream_app collabora;
@@ -80,57 +73,51 @@ server {
 }
 ```
 
-Repeat the process for all internal applications.
+Repeat the process for all internal applications and for every location block.
 
-The recommended way to access internal applications from the internet is through a VPN, for example WireGuard:
+One way to securely access internal applications from the internet is through a VPN, for example WireGuard:
 
 [WireGuard Container](https://hub.docker.com/r/linuxserver/wireguard)
 
 [WireGuard on OPNSense](https://blog.linuxserver.io/2019/11/16/setting-up-wireguard-on-opnsense-android/)
 
+
 ## Fail2Ban
+Fail2Ban is an intrusion prevention software that protects external applications from brute-force attacks. Attackers that fail to login to your applications a certain number of times will get blocked from accessing all of your applications.
+Fail2Ban looks for failed login attempts in log files, counts the failed attempts in a short period, and bans the IP address of the attacker.
 
-Fail2Ban is an intrusion prevention software that protects external applications from brute-force attacks. Attackers who fail to login to your applications a certain number of times will get blocked from accessing all of your applications.
-
-Fail2Ban does this by looking for failed login attempts in log files, counts the failed attempts in a short period, and bans the IP address of the attacker.
-
-First, we need to mount the logs to SWAG's container, add a volume for the log to the compose yaml:
+Mount the application logs to SWAG's container by adding a volume for the log to the compose yaml:
 ```
       - /path/to/nextcloud/nextcloud.log:/nextcloud/nextcloud.log:ro
 ```
-In case the application has multiple log files with dates, mount the entire folder:
+If the application has multiple log files with dates, mount the entire folder:
 ```
       - /path/to/jellyfin/log:/jellyfin:ro
 ```
-
-Recreate the container with the log mount, then create a file called nextcloud.conf under fail2ban/filter.d:
-
+Recreate the container with the log mount, then create a file called nextcloud.local under fail2ban/filter.d:
 ```
 [Definition]
 failregex=^.*Login failed: '?.*'? \(Remote IP: '?<ADDR>'?\).*$
           ^.*\"remoteAddr\":\"<ADDR>\".*Trusted domain error.*$
 ignoreregex =
 ```
-
-The configuration file containes a pattern by which failed login attempts are matched. In order to test the pattern, fail to login to nextcloud and look for the entry corresponding to your failed attempt.
+The configuration file containes a pattern by which failed login attempts are matched. Test the pattern by failing to login to nextcloud and look for the entry corresponding to your failed attempt.
 ```
 {"reqId":"k5j5H7K3eskXt3hCLSc4i","level":2,"time":"2020-10-14T22:56:14+00:00","remoteAddr":"1.2.3.4","user":"--",
 "app":"no app in context","method":"POST","url":"/login","message":"Login failed: username (Remote IP: 5.5.5.5)",
 "userAgent":"Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/5.6.7.8 Mobile 
 Safari/537.36","version":"19.0.4.2"}
 ```
-In order to test the pattern in nextcloud.conf, run the following command on the docker host:
+Test the pattern in nextcloud.local by running the following command on the docker host:
 ```
-docker exec swag fail2ban-regex /nextcloud/nextcloud.log /config/fail2ban/filter.d/nextcloud.conf
+docker exec swag fail2ban-regex /nextcloud/nextcloud.log /config/fail2ban/filter.d/nextcloud.local
 ```
 If the pattern works, you will see matches corresponding to the amount of failed login attempts:
 ```
 Lines: 92377 lines, 0 ignored, 2 matched, 92375 missed
 [processed in 7.51 sec]
 ```
-
 The final step is to activate the jail, add the following to fail2ban/jail.local:
-
 ```
 [nextcloud]
 enabled = true
@@ -139,7 +126,7 @@ filter = nextcloud
 logpath = /nextcloud/nextcloud.log
 action  = iptables-allports[name=nextcloud]
 ```
-If the application has multiple log files with dates:
+The logpath is slightly different for applications that have multiple log files with dates:
 ```
 [jellyfin]
 enabled  = true
@@ -156,18 +143,17 @@ If you need to unban an IP address that was blocked, run the following command o
 docker exec swag fail2ban-client unban <ip address>
 ```
 
-This great mod sends a discord notification when Fail2Ban blocks an attack: [f2bdiscord](https://github.com/linuxserver/docker-mods/tree/swag-f2bdiscord)
+This great mod sends a discord notification when Fail2Ban blocks an attack: [f2bdiscord](https://github.com/linuxserver/docker-mods/tree/swag-f2bdiscord).
 
 ## Geoblock
+Geoblock reduces the attack surface of SWAG by restricting access based on countries.
 
-Geoblock is a great way to reduce the attack surface of SWAG by restricting access based on countries.
-
-To enable geoblock, uncomment the Geoip2 config line in nginx.conf:
+Enable geoblock by uncommenting the Geoip2 config line in nginx.conf:
 ```
 include /config/nginx/geoip2.conf;
 ```
 
-Acquire a Maxmind license key [here](https://www.maxmind.com/en/geolite2/signup)
+Acquire a Maxmind license key [here](https://www.maxmind.com/en/geolite2/signup).
 
 Add the following environment variable to the compose yaml to automatically download the Geolite2 database:
 
@@ -175,18 +161,23 @@ Add the following environment variable to the compose yaml to automatically down
       - MAXMINDDB_LICENSE_KEY=<license key>
 ```
 
-Edit geoip2.conf, below are 2 examples:
-- Allow a single country and your LAN.
-- Allow everything except high risk countries. (GilbN's list based on the Spamhaus statistics and Aakamai’s state of the internet report)
+Add the following configuration to geoip2.conf, below are 2 examples:
 
+Allow a single country and your LAN:
 ```Nginx
+geo $lan-ip {
+    default no;
+    192.168.1.0/24 yes; #Replace with your LAN subnet
+    127.0.0.1 yes;
+}
+
 map $geoip2_data_country_iso_code $allowed_mycountry {
     default no;
     US yes; #Replace with your country code list https://dev.maxmind.com/geoip/legacy/codes/iso3166/
-    192.168.1.0/24 yes; #Replace with your LAN subnet
-	  127.0.0.1 yes;
 }
-
+```
+Allow everything except high risk countries: (GilbN's list based on the Spamhaus statistics and Aakamai’s state of the internet report)
+```Nginx
 map $geoip2_data_country_iso_code $denied_highrisk {
     default yes; #If your country is listed below, remove it from the list
     CN no; #China
@@ -209,9 +200,15 @@ map $geoip2_data_country_iso_code $denied_highrisk {
  }
 ```
 
-The final step is to utilize the geoblock in your configuration, add one of the following lines above your location section in every application you want to protect.
+Utilize the geoblock in your configuration by adding one of the following lines above your location section in every application you want to protect.
+
+**Note that when using an allowed filter, you also need to check if the source is a LAN IP, it's not required when using a denied filter.**
 ```
+    if ($lan-ip = yes) { set $allowed_mycountry yes; }
     if ($allowed_mycountry = no) { return 404; }
+```
+Or
+```
     if ($denied_highrisk = no) { return 404; }
 ```
 
@@ -226,7 +223,8 @@ server {
     include /config/nginx/ssl.conf;
     client_max_body_size 0;
 
-    if ($allowed_mycountry = no) { return 404; }
+    if ($lan-ip = yes) { set $allowed_mycountry yes; } #Check for a LAN IP
+    if ($allowed_mycountry = no) { return 404; } #Check the country filter
 
     location / {
         include /config/nginx/proxy.conf;
@@ -239,14 +237,14 @@ server {
 }
 ```
 
-Add the line to every external application based on your needs.
+Add the lines to every external application based on your needs.
+
 
 ## NGINX Configuration
-
 ### X-Robots-Tag
-You can prevent applications from appearing in results of search engines and web crawlers, regardless of whether other sites link to it. It doesn't work on all search engines and web crawlers, but it significantly reduces the chance.
+You can prevent applications from appearing in results of search engines and web crawlers, regardless of whether other sites link to it. It doesn't work on all search engines and web crawlers, but it significantly reduces the amount.
 
-Uncomment the X-Robots-Tag config line in ssl.conf to enable on all of your applications:
+Uncomment the X-Robots-Tag config line in ssl.conf to enable on **all** of your applications:
 ```
 add_header X-Robots-Tag "noindex, nofollow, nosnippet, noarchive";
 ```
@@ -261,7 +259,7 @@ HTTP Strict Transport Security (HSTS) is a web security policy mechanism that he
 
 **HSTS requires a working SSL certificate on your domains before enabling it.**
 
-To enable, uncomment the HSTS config line in ssl.conf:
+Enable HSTS by uncommenting the HSTS config line in ssl.conf:
 ```
 add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
 ```
@@ -280,8 +278,8 @@ To address this, Google maintains a “HSTS preload list” of web domains and s
 
 Be aware that once you set the STS header or submit your domains to the HSTS preload list, it is impossible to remove it. It’s a one‑way decision to make your domains available over HTTPS.
 
-## Authelia
 
+## Authelia
 Authelia is an open-source authentication and authorization server providing 2-factor authentication and single sign-on (SSO) for your applications via a web portal. Refer to this [blog post to configure Authelia](https://blog.linuxserver.io/2020/08/26/setting-up-authelia/).
 
 
